@@ -1,9 +1,9 @@
 // Koi: a chain of spine points that follows the head (follow-the-leader),
 // with a travelling sine wave added at draw time for the swimming motion.
 const KOI_VARIETIES = [
-  { base: '#f5f0e6', fin: 'rgba(245,240,230,0.55)', spots: ['#e4471b', '#d63d16', '#ea5a24'] },  // kohaku
-  { base: '#f5f0e6', fin: 'rgba(245,240,230,0.55)', spots: ['#e4471b', '#e4471b', '#1a1a1d'] },  // sanke
-  { base: '#1c1b1f', fin: 'rgba(40,38,44,0.55)',    spots: ['#e6521f', '#f3eee4', '#e6521f'] },  // showa
+  { base: '#f5f0e6', fin: 'rgba(245,240,230,0.55)', spots: ['#d8502a', '#c9461f', '#dc5c2c'] },  // kohaku
+  { base: '#f5f0e6', fin: 'rgba(245,240,230,0.55)', spots: ['#d8502a', '#d8502a', '#1a1a1d'] },  // sanke
+  { base: '#1c1b1f', fin: 'rgba(40,38,44,0.55)',    spots: ['#d75628', '#f3eee4', '#d75628'] },  // showa
   { base: '#f0a530', fin: 'rgba(250,190,90,0.5)',   spots: ['#f7c76a'] },                        // orange ogon
   { base: '#f3cf4f', fin: 'rgba(250,225,130,0.5)',  spots: ['#fae49a'] },                        // yamabuki
   { base: '#d9802e', fin: 'rgba(230,150,80,0.5)',   spots: ['#ee9a45'] },                        // chagoi
@@ -45,7 +45,7 @@ class Koi {
 
   makeSpots() {
     const v = this.variety;
-    if (v.tancho) return [{ s: 0.07, o: 0, rx: 0.075, ry: 0.07, color: '#d8321a' }];
+    if (v.tancho) return [{ s: 0.07, o: 0, rx: 0.075, ry: 0.07, color: '#c93a22' }];
     const spots = [];
     const count = 2 + Math.floor(Math.random() * 4);
     for (let k = 0; k < count; k++) {
@@ -67,22 +67,20 @@ class Koi {
   }
 
   // Dart off in a random new direction (at least 60 degrees away from the current one),
-  // preferring directions that don't point straight into the pond edge.
-  scatter(W, H) {
+  // preferring directions that don't point straight into the shore.
+  scatter(pond) {
     const head = this.points[0];
     let heading = this.heading + rand(Math.PI / 3, (Math.PI * 5) / 3);
-    for (let tries = 0; tries < 10; tries++) {
+    for (let tries = 0; tries < 12; tries++) {
       const h = this.heading + rand(Math.PI / 3, (Math.PI * 5) / 3);
-      const px = head.x + Math.cos(h) * 160;
-      const py = head.y + Math.sin(h) * 160;
-      if (px > 60 && px < W - 60 && py > 60 && py < H - 60) { heading = h; break; }
+      if (pond.norm(head.x + Math.cos(h) * 160, head.y + Math.sin(h) * 160) < 0.82) { heading = h; break; }
     }
     this.targetHeading = heading;
     this.burst = rand(220, 300);
     this.scatterTime = 0.9;
   }
 
-  update(dt, t, W, H, school) {
+  update(dt, t, pond, school, threats) {
     const head = this.points[0];
     const vx = Math.cos(this.heading);
     const vy = Math.sin(this.heading);
@@ -90,16 +88,35 @@ class Koi {
     // Gentle meandering turn.
     let turn = (Math.sin(t * 0.37 + this.seed) * 0.9 + Math.sin(t * 0.91 + this.seed * 1.7) * 0.5) * 0.5;
 
-    // Steering: stay off the edges, keep a little space from other fish.
+    // Steering: stay off the shore, keep a little space from other fish.
     let sx = 0;
     let sy = 0;
-    const m = 120;
-    if (head.x < m) sx += ((m - head.x) / m) * 2.5;
-    if (head.x > W - m) sx -= ((head.x - (W - m)) / m) * 2.5;
-    if (head.y < m) sy += ((m - head.y) / m) * 2.5;
-    if (head.y > H - m) sy -= ((head.y - (H - m)) / m) * 2.5;
+    const m = 110;
+    const shore = pond.shoreDist(head.x, head.y);
+    if (shore < m) {
+      const inward = pond.inward(head.x, head.y);
+      const f = (1 - shore / m) * 2.8;
+      sx += inward.x * f;
+      sy += inward.y * f;
+    }
     const wallX = sx;
     const wallY = sy;
+
+    // Get out of the way of anything big swimming past.
+    for (const th of threats) {
+      const reach = th.length * 0.75;
+      for (const p of [th.disp[0], th.disp[Math.floor(th.disp.length * 0.4)]]) {
+        const dx = head.x - p.x;
+        const dy = head.y - p.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 0 && dist < reach) {
+          const f = (1 - dist / reach) * 3;
+          sx += (dx / dist) * f;
+          sy += (dy / dist) * f;
+          this.burst = Math.max(this.burst, 140 * (1 - dist / reach));
+        }
+      }
+    }
 
     const personal = this.length * 0.9;
     for (const other of school) {
@@ -128,8 +145,9 @@ class Koi {
     this.burst *= Math.exp(-dt * 1.4);
     this.speed = this.baseSpeed * (0.85 + 0.15 * Math.sin(t * 0.5 + this.seed)) + this.burst;
 
-    head.x = clamp(head.x + Math.cos(this.heading) * this.speed * dt, 5, W - 5);
-    head.y = clamp(head.y + Math.sin(this.heading) * this.speed * dt, 5, H - 5);
+    head.x += Math.cos(this.heading) * this.speed * dt;
+    head.y += Math.sin(this.heading) * this.speed * dt;
+    pond.clampInside(head, 0.97);
 
     for (let i = 1; i < KOI_SEGMENTS; i++) {
       const a = this.points[i - 1];
@@ -205,11 +223,12 @@ class Koi {
     ctx.closePath();
   }
 
-  drawShadow(ctx) {
-    const off = 5 + this.depth * 10;
+  // `sun` is the shadow direction scaled by length, plus its opacity.
+  drawShadow(ctx, sun) {
+    const off = 4 + this.depth * 9;
     ctx.save();
-    ctx.translate(off, off * 1.3);
-    ctx.fillStyle = 'rgba(0, 12, 16, 0.22)';
+    ctx.translate(sun.x * off, sun.y * off);
+    ctx.fillStyle = `rgba(0, 12, 14, ${sun.alpha})`;
     this.bodyPath(ctx);
     ctx.fill();
     ctx.restore();

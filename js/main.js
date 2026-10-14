@@ -13,11 +13,15 @@
   const water = new Water(4);
   let W = 0;
   let H = 0;
+  let pond = null;
+  let land = null;
+  let flora = null;
   let fish = [];
   let pads = [];
   let petals = [];
   let gusts = [];
   let sky = null;
+  let shark = null;
   let vignette = null;
 
   function buildVignette() {
@@ -25,40 +29,46 @@
     vignette.width = W;
     vignette.height = H;
     const v = vignette.getContext('2d');
-    const g = v.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.hypot(W, H) * 0.6);
+    const g = v.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.4, W / 2, H / 2, Math.hypot(W, H) * 0.62);
     g.addColorStop(0, 'rgba(0,0,0,0)');
-    g.addColorStop(1, 'rgba(0,10,12,0.5)');
+    g.addColorStop(1, 'rgba(8,12,6,0.38)');
     v.fillStyle = g;
     v.fillRect(0, 0, W, H);
   }
 
-  function resize() {
+  // Build (or rebuild after a resize) the pond and everything tied to its shape.
+  function setup() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     W = window.innerWidth;
     H = window.innerHeight;
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    water.resize(W, H);
+
+    const firstRun = !pond;
+    pond = new Pond(W, H, pond && pond.harmonics);
+    water.resize(W, H, pond);
+    land = paintLand(pond, W, H, dpr);
+    flora = new Flora(pond, W, H, dpr);
+    sky = new NightSky(pond);
     buildVignette();
-    if (sky) sky.resize(W, H);
-  }
+    gusts = [];
+    shark = null;
 
-  function populate() {
-    const count = clamp(Math.round((W * H) / 110000), 6, 14);
-    const minDim = Math.min(W, H);
-    fish = [];
-    for (let k = 0; k < count; k++) {
-      const len = clamp(minDim * rand(0.11, 0.17), 60, 170);
-      fish.push(new Koi(rand(W * 0.2, W * 0.8), rand(H * 0.2, H * 0.8), len));
+    if (firstRun) {
+      const minDim = Math.min(pond.rx, pond.ry) * 2;
+      const count = clamp(Math.round(pond.area / 70000), 6, 14);
+      for (let k = 0; k < count; k++) {
+        const p = pond.randomInside(80);
+        fish.push(new Koi(p.x, p.y, clamp(minDim * rand(0.12, 0.18), 55, 160)));
+      }
+      fish.sort((a, b) => a.depth - b.depth); // deeper fish drawn first
+    } else {
+      for (const f of fish) for (const p of f.points) pond.clampInside(p, 0.9);
     }
-    fish.sort((a, b) => a.depth - b.depth); // deeper fish drawn first
-
-    pads = [];
-    for (let k = 0; k < clamp(Math.round((W * H) / 200000), 4, 9); k++) pads.push(new LilyPad(W, H));
+    pads = makeLilyPads(pond);
     petals = [];
-    for (let k = 0; k < 16; k++) petals.push(new Petal(W, H));
-    sky = new NightSky(W, H);
+    for (let k = 0; k < 18; k++) petals.push(new Petal(pond));
   }
 
   // ---------- Input ----------
@@ -72,11 +82,11 @@
     const y = e.clientY;
     const koi = fishAt(x, y);
     if (koi) {
-      koi.scatter(W, H);
+      koi.scatter(pond);
       water.disturb(koi.head.x, koi.head.y, 24, 6);
-      gusts.push(new Gust(W, H));
+      gusts.push(new Gust(W, H, rand(0.9, 1.2)));
       hud.hint.classList.add('hidden');
-    } else {
+    } else if (pond.norm(x, y) < 1) {
       water.disturb(x, y, 14, 3); // tapping open water just makes a ripple
     }
   });
@@ -85,9 +95,10 @@
     canvas.style.cursor = fishAt(e.clientX, e.clientY) ? 'pointer' : 'default';
   });
 
+  let resizeTimer = 0;
   window.addEventListener('resize', () => {
-    resize();
-    for (const f of fish) for (const p of f.points) { p.x = clamp(p.x, 5, W - 5); p.y = clamp(p.y, 5, H - 5); }
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(setup, 150);
   });
 
   // ---------- Simulation ----------
@@ -96,44 +107,81 @@
   let acc = 0;
   let last = performance.now();
   let lastClock = '';
+  let nextShark = elapsed + rand(12, 20);
+  let nextBreeze = elapsed + rand(8, 16);
 
   function waterStep() {
     water.ambient();
     for (const f of fish) water.disturb(f.head.x, f.head.y, f.length * 0.1, 0.04 + f.speed * 0.0011);
-    for (const g of gusts) g.ruffle(water, W, H);
+    for (const g of gusts) g.ruffle(water);
     water.step();
   }
 
   function update(dt) {
-    for (const f of fish) f.update(dt, elapsed, W, H, fish);
-    for (const g of gusts) g.update(dt);
+    // Occasional breezes on their own, from any direction.
+    if (elapsed > nextBreeze) {
+      gusts.push(new Gust(W, H, rand(0.4, 0.75)));
+      nextBreeze = elapsed + rand(14, 30);
+    }
+    if (!shark && elapsed > nextShark) shark = new Shark(pond);
+    if (shark) {
+      shark.update(dt, elapsed, water);
+      if (shark.done) {
+        shark = null;
+        nextShark = elapsed + rand(35, 70);
+      }
+    }
+
+    const threats = shark && shark.visibility > 0.25 ? [shark] : [];
+    for (const f of fish) f.update(dt, elapsed, pond, fish, threats);
+    for (const g of gusts) g.update(dt, elapsed);
     gusts = gusts.filter((g) => !g.done);
-    for (const p of pads) p.update(dt, elapsed, W, H, gusts, pads);
-    for (const p of petals) p.update(dt, elapsed, W, H, gusts);
+    for (const p of pads) p.update(dt, elapsed, pond, gusts, pads);
+    for (const p of petals) p.update(dt, elapsed, pond, gusts);
     sky.update(dt, elapsed);
   }
 
   function render(day) {
+    const sun = day.sun;
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
 
+    // Under water.
     water.render(elapsed);
     water.drawBottom(ctx);
-    for (const f of fish) f.drawShadow(ctx);
+    flora.drawWeeds(ctx, elapsed);
+    if (shark) shark.drawShadow(ctx, sun);
+    for (const f of fish) f.drawShadow(ctx, sun);
+    if (shark) shark.draw(ctx);
     for (const f of fish) f.draw(ctx);
-    water.drawGlints(ctx, 0.45 + 0.55 * day.daylight);
-    for (const g of gusts) g.draw(ctx, elapsed);
-    for (const p of petals) p.draw(ctx);
-    for (const p of pads) p.draw(ctx);
+    water.drawGlints(ctx, 0.4 + 0.5 * day.daylight);
 
-    // Time-of-day tint over the whole scene.
+    // On the surface, then the banks, then what grows over them.
+    for (const p of petals) p.draw(ctx, sun);
+    for (const p of pads) p.draw(ctx, sun);
+    ctx.drawImage(land, 0, 0, W, H);
+    flora.drawTufts(ctx, elapsed, sun, gusts);
+    flora.drawTreeShadows(ctx, elapsed, sun, gusts);
+    flora.drawTrees(ctx, elapsed, gusts);
+    for (const g of gusts) g.draw(ctx);
+
+    // Time-of-day light: tint everything, then add warm low sun near sunrise/sunset.
     const [r, g, b] = day.sky;
     if (r < 254 || g < 254 || b < 254) {
       ctx.globalCompositeOperation = 'multiply';
       ctx.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`;
       ctx.fillRect(0, 0, W, H);
-      ctx.globalCompositeOperation = 'source-over';
     }
+    if (day.golden > 0.02) {
+      const sx = day.sunFromRight ? W * 1.1 : -W * 0.1;
+      const glow = ctx.createRadialGradient(sx, H * 0.35, 0, sx, H * 0.35, Math.max(W, H) * 1.1);
+      glow.addColorStop(0, `rgba(255,170,90,${0.22 * day.golden})`);
+      glow.addColorStop(1, 'rgba(255,170,90,0)');
+      ctx.globalCompositeOperation = 'screen';
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, W, H);
+    }
+    ctx.globalCompositeOperation = 'source-over';
 
     sky.draw(ctx, elapsed, day.night);
     ctx.drawImage(vignette, 0, 0, W, H);
@@ -169,7 +217,6 @@
     requestAnimationFrame(frame);
   }
 
-  resize();
-  populate();
+  setup();
   requestAnimationFrame(frame);
 })();
