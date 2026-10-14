@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Koi Pond</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="pond" aria-label="Koi pond simulation"></canvas>
+
+  <div class="hud">
+    <div class="clock">
+      <span id="phase">Morning</span>
+      <span id="time">07:00</span>
+    </div>
+    <div class="cycle"><div id="cycle-fill"></div></div>
+  </div>
+
+  <div class="hint" id="hint">Click a koi</div>
+
+  <!-- Classic scripts (not modules) so the page also works when opened straight from disk. -->
+  <script src="js/util.js"></script>
+  <script src="js/water.js"></script>
+  <script src="js/koi.js"></script>
+  <script src="js/scene.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
