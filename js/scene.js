@@ -17,7 +17,7 @@ class Gust {
     this.halfDiag = Math.hypot(W, H) / 2;
     this.age = 0;
     this.spawnFor = rand(2.5, 3.5);
-    this.rate = 55 * strength;
+    this.rate = 26 * strength;
     this.spawnAcc = 0;
     this.particles = [];
   }
@@ -44,9 +44,9 @@ class Gust {
       life: rand(8, 11),
       sp: rand(0.8, 1.2),
       ph: rand(0, TAU),
-      wf: rand(5, 8),
-      alpha: rand(0.12, 0.26) * Math.min(1, this.strength + 0.2),
-      width: rand(1, 2),
+      wf: rand(1.8, 3.2),
+      bright: rand(0.6, 1),
+      width: rand(0.7, 1.4),
       trail: [],
     });
   }
@@ -63,7 +63,7 @@ class Gust {
     const cx = this.W / 2;
     const cy = this.H / 2;
     for (const p of this.particles) {
-      const a = this.flowAngle(p.x, p.y, t) + Math.sin(p.age * p.wf + p.ph) * 0.5;
+      const a = this.flowAngle(p.x, p.y, t) + Math.sin(p.age * p.wf + p.ph) * 0.3;
       p.vx = Math.cos(a) * this.speed * p.sp;
       p.vy = Math.sin(a) * this.speed * p.sp;
       p.x += p.vx * dt;
@@ -98,35 +98,71 @@ class Gust {
     return { x: fx * s * k, y: fy * s * k };
   }
 
-  // Roughen the water under the wind lines ("cat's paws").
+  // Roughen the water along the wind's path ("cat's paws"), all along each trail.
   ruffle(water) {
     const n = this.particles.length;
     if (!n) return;
-    for (let k = 0; k < 22; k++) {
+    for (let k = 0; k < 34; k++) {
       const p = this.particles[Math.floor(Math.random() * n)];
-      water.disturb(p.x, p.y, 6, 0.4 * this.strength * this.fade(p));
+      const i = Math.floor(Math.random() * (p.trail.length / 2)) * 2;
+      if (i + 1 >= p.trail.length) continue;
+      water.disturb(p.trail[i], p.trail[i + 1], 5, 0.45 * this.strength * this.fade(p));
     }
   }
 
+  // Each wind line is a soft white brush stroke: a filled ribbon that swells in the
+  // middle and tapers to nothing at both ends, fading along its length. Three ribbons
+  // stacked (wide and faint, medium, narrow core) give it soft edges.
   draw(ctx) {
+    const passes = [[24, 0.07], [13, 0.1], [5, 0.16]];
     ctx.save();
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
     for (const p of this.particles) {
       const tr = p.trail;
       const n = tr.length / 2;
-      if (n < 3) continue;
-      const f = this.fade(p);
-      ctx.lineWidth = p.width;
-      // Three overlapping pieces, brighter toward the head of the line.
-      for (let part = 0; part < 3; part++) {
-        const i0 = Math.floor((part * (n - 1)) / 3);
-        const i1 = Math.floor(((part + 1) * (n - 1)) / 3);
-        ctx.strokeStyle = `rgba(255,255,250,${p.alpha * f * (part + 1) / 3})`;
+      if (n < 8) continue;
+      const f = this.fade(p) * Math.min(1, this.strength + 0.25) * p.bright;
+
+      // Spine points with normals, every other trail point.
+      const pts = [];
+      for (let i = 0; i < n; i += 2) pts.push(i);
+      if (pts[pts.length - 1] !== n - 1) pts.push(n - 1);
+      const m = pts.length;
+      const sx = new Float32Array(m);
+      const sy = new Float32Array(m);
+      const nx = new Float32Array(m);
+      const ny = new Float32Array(m);
+      for (let k = 0; k < m; k++) {
+        sx[k] = tr[pts[k] * 2];
+        sy[k] = tr[pts[k] * 2 + 1];
+      }
+      for (let k = 0; k < m; k++) {
+        const a = Math.max(0, k - 1);
+        const b = Math.min(m - 1, k + 1);
+        const dx = sx[b] - sx[a];
+        const dy = sy[b] - sy[a];
+        const l = Math.hypot(dx, dy) || 1;
+        nx[k] = -dy / l;
+        ny[k] = dx / l;
+      }
+
+      for (const [width, alpha] of passes) {
+        const grad = ctx.createLinearGradient(sx[0], sy[0], sx[m - 1], sy[m - 1]);
+        grad.addColorStop(0, 'rgba(255,255,255,0)');
+        grad.addColorStop(0.6, `rgba(255,255,255,${alpha * f})`);
+        grad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = grad;
         ctx.beginPath();
-        ctx.moveTo(tr[i0 * 2], tr[i0 * 2 + 1]);
-        for (let i = i0 + 1; i <= i1; i++) ctx.lineTo(tr[i * 2], tr[i * 2 + 1]);
-        ctx.stroke();
+        for (let k = 0; k < m; k++) {
+          const hw = width * p.width * 0.5 * Math.pow(Math.sin((Math.PI * k) / (m - 1)), 0.7);
+          if (k === 0) ctx.moveTo(sx[k] + nx[k] * hw, sy[k] + ny[k] * hw);
+          else ctx.lineTo(sx[k] + nx[k] * hw, sy[k] + ny[k] * hw);
+        }
+        for (let k = m - 1; k >= 0; k--) {
+          const hw = width * p.width * 0.5 * Math.pow(Math.sin((Math.PI * k) / (m - 1)), 0.7);
+          ctx.lineTo(sx[k] - nx[k] * hw, sy[k] - ny[k] * hw);
+        }
+        ctx.closePath();
+        ctx.fill();
       }
     }
     ctx.restore();
