@@ -55,18 +55,19 @@
     gusts = [];
     shark = null;
 
+    // As many koi as lily pads.
+    const count = clamp(Math.round(pond.area / 40000), 8, 22);
     if (firstRun) {
       const minDim = Math.min(pond.rx, pond.ry) * 2;
-      const count = clamp(Math.round(pond.area / 70000), 6, 14);
       for (let k = 0; k < count; k++) {
         const p = pond.randomInside(80);
-        fish.push(new Koi(p.x, p.y, clamp(minDim * rand(0.12, 0.18), 55, 160)));
+        fish.push(new Koi(p.x, p.y, clamp(minDim * rand(0.09, 0.14), 50, 140)));
       }
       fish.sort((a, b) => a.depth - b.depth); // deeper fish drawn first
     } else {
       for (const f of fish) for (const p of f.points) pond.clampInside(p, 0.9);
     }
-    pads = makeLilyPads(pond);
+    pads = makeLilyPads(pond, fish.length);
     petals = [];
     for (let k = 0; k < 18; k++) petals.push(new Petal(pond));
   }

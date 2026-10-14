@@ -6,27 +6,60 @@ class Pond {
   constructor(W, H, harmonics) {
     this.cx = W / 2;
     this.cy = H / 2;
-    this.harmonics = harmonics || [
-      { k: 2, a: rand(0.03, 0.06), p: rand(0, TAU) },
-      { k: 3, a: rand(0.03, 0.05), p: rand(0, TAU) },
-      { k: 4, a: rand(0.015, 0.03), p: rand(0, TAU) },
-      { k: 6, a: rand(0.008, 0.016), p: rand(0, TAU) },
-      { k: 9, a: rand(0.004, 0.008), p: rand(0, TAU) },
-    ];
-    const bulge = 1 + this.harmonics.reduce((s, h) => s + h.a, 0);
-    const margin = clamp(Math.min(W, H) * 0.1, 36, 120) + 18;
-    this.rx = Math.max(60, W / 2 - margin) / bulge;
-    this.ry = Math.max(60, H / 2 - margin) / bulge;
-    this.perimeter = Math.PI * (3 * (this.rx + this.ry) - Math.sqrt((3 * this.rx + this.ry) * (this.rx + 3 * this.ry)));
-    this.area = Math.PI * this.rx * this.ry;
+    this.harmonics = harmonics || Pond.makeHarmonics();
+
+    // Scale each axis so the outline's furthest reach just fits inside a thin land border.
+    let reachX = 0;
+    let reachY = 0;
+    for (let i = 0; i < 720; i++) {
+      const th = (i / 720) * TAU;
+      const s = this.shape(th);
+      reachX = Math.max(reachX, Math.abs(Math.cos(th)) * s);
+      reachY = Math.max(reachY, Math.abs(Math.sin(th)) * s);
+    }
+    const margin = clamp(Math.min(W, H) * 0.05, 22, 60) + 10;
+    this.rx = Math.max(60, W / 2 - margin) / reachX;
+    this.ry = Math.max(60, H / 2 - margin) / reachY;
 
     this.path = new Path2D();
-    for (let i = 0; i <= 240; i++) {
-      const p = this.point((i / 240) * TAU);
-      if (i === 0) this.path.moveTo(p.x, p.y);
-      else this.path.lineTo(p.x, p.y);
+    this.perimeter = 0;
+    this.area = 0;
+    let prev = this.point(0);
+    this.path.moveTo(prev.x, prev.y);
+    for (let i = 1; i <= 360; i++) {
+      const p = this.point((i / 360) * TAU);
+      this.path.lineTo(p.x, p.y);
+      this.perimeter += Math.hypot(p.x - prev.x, p.y - prev.y);
+      this.area += (prev.x * p.y - p.x * prev.y) / 2;
+      prev = p;
     }
     this.path.closePath();
+    this.area = Math.abs(this.area);
+  }
+
+  // Random lobes and bays at several scales, like a natural pond or small lake.
+  // Rejects shapes whose bays would pinch the water too narrow.
+  static makeHarmonics() {
+    for (let tries = 0; tries < 50; tries++) {
+      const h = [
+        { k: 2, a: rand(0.06, 0.11), p: rand(0, TAU) },
+        { k: 3, a: rand(0.06, 0.11), p: rand(0, TAU) },
+        { k: 4, a: rand(0.04, 0.08), p: rand(0, TAU) },
+        { k: 5, a: rand(0.03, 0.06), p: rand(0, TAU) },
+        { k: 7, a: rand(0.02, 0.04), p: rand(0, TAU) },
+        { k: 11, a: rand(0.008, 0.016), p: rand(0, TAU) },
+        { k: 17, a: rand(0.004, 0.008), p: rand(0, TAU) },
+      ];
+      let min = Infinity;
+      for (let i = 0; i < 720; i++) {
+        const th = (i / 720) * TAU;
+        let s = 1;
+        for (const q of h) s += q.a * Math.sin(q.k * th + q.p);
+        min = Math.min(min, s);
+      }
+      if (min > 0.62) return h;
+    }
+    return [{ k: 3, a: 0.1, p: 0 }, { k: 5, a: 0.05, p: 1 }];
   }
 
   shape(theta) {
@@ -376,11 +409,12 @@ class Flora {
 
     // A few trees on the bank whose canopies hang out over the water.
     this.trees = [];
+    // Trees stand toward the screen corners, where the land is widest.
     const treeCount = Math.min(W, H) < 500 ? 2 : 3;
-    const start = rand(0, TAU);
+    const corners = [Math.PI / 4, (3 * Math.PI) / 4, (5 * Math.PI) / 4, (7 * Math.PI) / 4].sort(() => Math.random() - 0.5);
     for (let k = 0; k < treeCount; k++) {
       const r = clamp(Math.min(W, H) * rand(0.11, 0.15), 50, 140);
-      const theta = start + (k * TAU) / treeCount + rand(-0.4, 0.4);
+      const theta = corners[k] + rand(-0.25, 0.25);
       const p = pond.offsetPoint(theta, r * 0.45);
       this.trees.push({ x: p.x, y: p.y, r, ph: rand(0, TAU), ...makeCanopy(r, dpr) });
     }

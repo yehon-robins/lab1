@@ -260,14 +260,13 @@ class LilyPad {
 }
 
 // Lily pads grow in clusters near the shore, with a few loners further out.
-function makeLilyPads(pond) {
+function makeLilyPads(pond, total) {
   const pads = [];
-  const total = clamp(Math.round(pond.area / 8000), 14, 40);
-  const clusters = clamp(Math.round(total / 6), 3, 7);
+  const clusters = clamp(Math.round(total / 5), 2, 4);
   for (let c = 0; c < clusters; c++) {
     const theta = rand(0, TAU);
     const center = pond.offsetPoint(theta, -rand(50, 130));
-    const n = Math.round((total * 0.8) / clusters);
+    const n = Math.floor((total * 0.7) / clusters);
     for (let k = 0; k < n; k++) {
       const a = rand(0, TAU);
       const d = Math.sqrt(Math.random()) * 80;
@@ -368,10 +367,10 @@ const SKY_KEYS = [
   [0.4, [255, 244, 226]],
   [0.46, [252, 206, 158]],  // golden hour
   [0.51, [214, 140, 112]],  // sunset
-  [0.56, [118, 104, 146]],  // dusk
-  [0.62, [62, 72, 104]],    // night
-  [0.9, [56, 66, 100]],
-  [0.95, [112, 102, 140]],  // pre-dawn
+  [0.56, [146, 132, 172]],  // dusk
+  [0.62, [102, 114, 152]],  // moonlit night
+  [0.9, [96, 108, 148]],
+  [0.95, [146, 132, 168]],  // pre-dawn
   [1.0, [226, 168, 150]],
 ];
 
@@ -391,7 +390,7 @@ function dayInfo(elapsed) {
   const t = (elapsed % DAY_LENGTH) / DAY_LENGTH;
   const sky = skyAt(t);
   const lum = (sky[0] * 0.3 + sky[1] * 0.59 + sky[2] * 0.11) / 255;
-  const night = clamp((0.8 - lum) / 0.5, 0, 1);
+  const night = clamp((0.85 - lum) / 0.4, 0, 1);
 
   // Sun crosses from east (right) to west (left); shadows are long and faint at the ends of the day.
   let sun;
@@ -404,7 +403,7 @@ function dayInfo(elapsed) {
     const l = Math.hypot(dx, dy);
     sun = { x: (dx / l) * len, y: (dy / l) * len, alpha: 0.05 + 0.2 * Math.min(1, elev * 4) };
   } else {
-    sun = { x: 0.6, y: 0.8, alpha: 0.05 * night };
+    sun = { x: 0.6, y: 0.8, alpha: 0.09 * night }; // soft moon shadows
   }
 
   // Warm, low light near sunrise and sunset.
@@ -487,7 +486,7 @@ class NightSky {
     }
     this.fireflies = [];
     for (let k = 0; k < 26; k++) this.fireflies.push(new Firefly(pond));
-    this.moon = { x: pond.cx + pond.rx * 0.38, y: pond.cy - pond.ry * 0.34 };
+    this.moon = pond.point(-0.75, 0.5); // halfway out, so it stays on the water whatever the shoreline does
   }
 
   update(dt, t) {
