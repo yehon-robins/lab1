@@ -2,46 +2,59 @@
 // the day/night cycle with its sun shadows, and the night-time lights.
 
 // ---------- Wind ----------
-// A gust is a stream of particles following a meandering flow field. Each particle
-// leaves a fading trail, so the wind reads as wavy lines that bend and drift.
-class Gust {
-  constructor(W, H, strength = 1) {
-    this.W = W;
-    this.H = H;
-    this.strength = strength;
-    this.angle = rand(0, TAU);
-    this.veer = rand(-0.2, 0.2);          // the whole gust slowly changes direction
+// One continuous breeze that lives on its own: its heading slowly wanders and its
+// strength rises and falls in gusts and lulls. Things on the pond ask the field for
+// the push at their spot (a cheap formula, no particle search). A small, capped pool
+// of particles traces the field and leaves fading trails, so the wind reads as wavy
+// lines that bend and drift.
+const MAX_WIND_LINES = 26;
+
+class Wind {
+  constructor(W, H) {
+    this.resize(W, H);
+    this.t = 0;
+    this.base = rand(0, TAU);
     this.seedA = rand(0, 100);
     this.seedB = rand(0, 100);
-    this.speed = rand(220, 290);
-    this.halfDiag = Math.hypot(W, H) / 2;
-    this.age = 0;
-    this.spawnFor = rand(2.5, 3.5);
-    this.rate = 26 * strength;
+    this.seedC = rand(0, 100);
     this.spawnAcc = 0;
     this.particles = [];
   }
 
-  get done() { return this.age > this.spawnFor && this.particles.length === 0; }
+  resize(W, H) {
+    this.W = W;
+    this.H = H;
+    this.particles = [];
+  }
 
-  flowAngle(x, y, t) {
+  // Overall heading: drifts slowly through the day.
+  get angle() {
+    const t = this.t;
+    return this.base + Math.sin(t * 0.031 + this.seedA) * 0.9 + Math.sin(t * 0.077 + this.seedB) * 0.5;
+  }
+
+  // Overall strength in [0.08, 1]: long swells with quicker gusts on top.
+  get strength() {
+    const t = this.t;
+    return clamp(0.4 + Math.sin(t * 0.11 + this.seedC) * 0.3 + Math.sin(t * 0.29 + this.seedA) * 0.22, 0.08, 1);
+  }
+
+  flowAngle(x, y) {
+    const t = this.t;
     return this.angle
       + Math.sin(x * 0.005 + t * 0.9 + this.seedA) * 0.6
       + Math.sin(y * 0.0045 - t * 0.7 + this.seedB) * 0.5;
   }
 
   spawn() {
-    const dx = Math.cos(this.angle);
-    const dy = Math.sin(this.angle);
-    const lat = rand(-this.halfDiag, this.halfDiag);
-    const back = this.halfDiag * 0.85 + rand(0, 120);
+    const m = 60;
     this.particles.push({
-      x: this.W / 2 - dx * back - dy * lat,
-      y: this.H / 2 - dy * back + dx * lat,
+      x: rand(-m, this.W + m),
+      y: rand(-m, this.H + m),
       vx: 0,
       vy: 0,
       age: 0,
-      life: rand(8, 11),
+      life: rand(4, 6.5),
       sp: rand(0.8, 1.2),
       ph: rand(0, TAU),
       wf: rand(1.8, 3.2),
@@ -51,62 +64,54 @@ class Gust {
     });
   }
 
-  fade(p) { return Math.min(1, p.age / 0.6) * Math.min(1, (p.life - p.age) / 1.5); }
+  fade(p) { return Math.min(1, p.age / 1) * Math.min(1, (p.life - p.age) / 1.5); }
 
   update(dt, t) {
-    this.age += dt;
-    this.angle += this.veer * dt;
-    if (this.age < this.spawnFor) {
-      this.spawnAcc += this.rate * dt;
+    this.t = t;
+    const s = this.strength;
+    // More (and faster) lines when it blows harder, none at all in a lull.
+    if (this.particles.length < MAX_WIND_LINES * s) {
+      this.spawnAcc += 9 * s * s * dt;
       while (this.spawnAcc >= 1) { this.spawnAcc -= 1; this.spawn(); }
     }
-    const cx = this.W / 2;
-    const cy = this.H / 2;
+    const speed = 200 * (0.5 + 0.5 * s);
     for (const p of this.particles) {
-      const a = this.flowAngle(p.x, p.y, t) + Math.sin(p.age * p.wf + p.ph) * 0.3;
-      p.vx = Math.cos(a) * this.speed * p.sp;
-      p.vy = Math.sin(a) * this.speed * p.sp;
+      const a = this.flowAngle(p.x, p.y) + Math.sin(p.age * p.wf + p.ph) * 0.3;
+      p.vx = Math.cos(a) * speed * p.sp;
+      p.vy = Math.sin(a) * speed * p.sp;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.age += dt;
       p.trail.push(p.x, p.y);
-      if (p.trail.length > 110) p.trail.splice(0, 2);
+      if (p.trail.length > 80) p.trail.splice(0, 2);
     }
+    const m = 200;
     this.particles = this.particles.filter(
-      (p) => p.age < p.life && !(p.age > 1 && Math.hypot(p.x - cx, p.y - cy) > this.halfDiag + 200)
+      (p) => p.age < p.life && p.x > -m && p.y > -m && p.x < this.W + m && p.y < this.H + m
     );
   }
 
-  // Push felt at a point: the average heading of nearby wind lines.
+  // Push felt at a point: the local flow heading, with gust patches rolling downwind.
   forceAt(x, y) {
-    const R = 110;
-    let fx = 0;
-    let fy = 0;
-    for (const p of this.particles) {
-      const dx = p.x - x;
-      const dy = p.y - y;
-      if (dx > R || dx < -R || dy > R || dy < -R) continue;
-      const d = Math.hypot(dx, dy);
-      if (d >= R) continue;
-      const w = (1 - d / R) * this.fade(p);
-      fx += (p.vx / this.speed) * w;
-      fy += (p.vy / this.speed) * w;
-    }
-    const s = this.strength * 0.45;
-    const mag = Math.hypot(fx, fy) * s;
-    const k = mag > 1.5 ? 1.5 / mag : 1;
-    return { x: fx * s * k, y: fy * s * k };
+    const a = this.flowAngle(x, y);
+    const dx = Math.cos(a);
+    const dy = Math.sin(a);
+    const along = x * Math.cos(this.angle) + y * Math.sin(this.angle);
+    const patch = 0.65 + 0.35 * Math.sin(along * 0.006 - this.t * 1.3 + this.seedC);
+    const mag = this.strength * 0.4 * patch;
+    return { x: dx * mag, y: dy * mag };
   }
 
-  // Roughen the water along the wind's path ("cat's paws"), all along each trail.
+  // Roughen the water along the wind lines ("cat's paws").
   ruffle(water) {
     const n = this.particles.length;
     if (!n) return;
-    for (let k = 0; k < 34; k++) {
+    const s = this.strength;
+    for (let k = 0; k < 8; k++) {
       const p = this.particles[Math.floor(Math.random() * n)];
       const i = Math.floor(Math.random() * (p.trail.length / 2)) * 2;
       if (i + 1 >= p.trail.length) continue;
-      water.disturb(p.trail[i], p.trail[i + 1], 5, 0.45 * this.strength * this.fade(p));
+      water.disturb(p.trail[i], p.trail[i + 1], 5, 0.35 * s * this.fade(p));
     }
   }
 
@@ -115,12 +120,14 @@ class Gust {
   // stacked (wide and faint, medium, narrow core) give it soft edges.
   draw(ctx) {
     const passes = [[24, 0.07], [13, 0.1], [5, 0.16]];
+    const s = this.strength;
     ctx.save();
     for (const p of this.particles) {
       const tr = p.trail;
       const n = tr.length / 2;
       if (n < 8) continue;
-      const f = this.fade(p) * Math.min(1, this.strength + 0.25) * p.bright;
+      const f = this.fade(p) * Math.min(1, s + 0.35) * p.bright;
+      if (f < 0.02) continue;
 
       // Spine points with normals, every other trail point.
       const pts = [];
@@ -169,15 +176,8 @@ class Gust {
   }
 }
 
-function windAt(gusts, x, y) {
-  let wx = 0;
-  let wy = 0;
-  for (const g of gusts) {
-    const f = g.forceAt(x, y);
-    wx += f.x;
-    wy += f.y;
-  }
-  return { x: wx, y: wy };
+function windAt(wind, x, y) {
+  return wind.forceAt(x, y);
 }
 
 // Slow ambient surface current that floating things drift with.
@@ -217,12 +217,12 @@ class LilyPad {
     this.bud = !this.flower && roll < 0.32 ? { a: rand(0, TAU), size: rand(5, 8) } : null;
   }
 
-  update(dt, t, pond, gusts, pads) {
+  update(dt, t, pond, wind, pads) {
     const cur = currentAt(t);
-    const wind = windAt(gusts, this.x, this.y);
-    this.vx += ((cur.x - this.vx) * 0.3 + wind.x * 80) * dt;
-    this.vy += ((cur.y - this.vy) * 0.3 + wind.y * 80) * dt;
-    this.spin += ((wind.x - wind.y) * 0.25 - this.spin * 0.5) * dt;
+    const w = windAt(wind, this.x, this.y);
+    this.vx += ((cur.x - this.vx) * 0.3 + w.x * 12) * dt;
+    this.vy += ((cur.y - this.vy) * 0.3 + w.y * 12) * dt;
+    this.spin += ((w.x - w.y) * 0.1 - this.spin * 0.5) * dt;
 
     for (const o of pads) {
       if (o === this) continue;
@@ -363,12 +363,12 @@ class Petal {
     this.color = pick(['#f1c3cf', '#f4d4dc', '#eab4c3', '#f7e2e6']);
   }
 
-  update(dt, t, pond, gusts) {
+  update(dt, t, pond, wind) {
     const cur = currentAt(t);
-    const wind = windAt(gusts, this.x, this.y);
-    this.vx += ((cur.x * 1.3 - this.vx) * 0.6 + wind.x * 200) * dt;
-    this.vy += ((cur.y * 1.3 - this.vy) * 0.6 + wind.y * 200) * dt;
-    this.vr += (Math.hypot(wind.x, wind.y) * rand(-6, 6) - this.vr * 0.4) * dt;
+    const w = windAt(wind, this.x, this.y);
+    this.vx += ((cur.x * 1.3 - this.vx) * 0.6 + w.x * 45) * dt;
+    this.vy += ((cur.y * 1.3 - this.vy) * 0.6 + w.y * 45) * dt;
+    this.vr += (Math.hypot(w.x, w.y) * rand(-6, 6) - this.vr * 0.4) * dt;
     keepAfloat(this, pond, 12, dt);
     this.x += this.vx * dt;
     this.y += this.vy * dt;

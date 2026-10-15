@@ -445,16 +445,16 @@ class Flora {
     ctx.restore();
   }
 
-  drawTufts(ctx, t, sun, gusts) {
+  drawTufts(ctx, t, sun, wind) {
     ctx.save();
     ctx.lineCap = 'round';
     for (const tf of this.tufts) {
-      const wind = windAt(gusts, tf.x, tf.y);
+      const w = windAt(wind, tf.x, tf.y);
       // Shadow first, then blades.
       for (const pass of [0, 1]) {
         for (const b of tf.blades) {
-          const swayX = wind.x * b.len * 0.5 + Math.sin(t * 1.4 + b.ph) * 1.5;
-          const swayY = wind.y * b.len * 0.5 + Math.cos(t * 1.1 + b.ph) * 1.5;
+          const swayX = w.x * b.len * 0.5 + Math.sin(t * 1.4 + b.ph) * 1.5;
+          const swayY = w.y * b.len * 0.5 + Math.cos(t * 1.1 + b.ph) * 1.5;
           const ex = tf.x + Math.cos(b.a) * b.len + swayX;
           const ey = tf.y + Math.sin(b.a) * b.len + swayY;
           const mx = tf.x + Math.cos(b.a) * b.len * 0.5 + swayX * 0.3;
@@ -479,10 +479,10 @@ class Flora {
     ctx.restore();
   }
 
-  drawTreeShadows(ctx, t, sun, gusts) {
+  drawTreeShadows(ctx, t, sun, wind) {
     ctx.save();
     for (const tr of this.trees) {
-      const sway = this.treeSway(tr, t, gusts);
+      const sway = this.treeSway(tr, t, wind);
       const off = 30 + tr.r * 0.25;
       ctx.globalAlpha = sun.alpha * 1.6;
       ctx.drawImage(tr.shadow, tr.x - tr.size / 2 + sway.x + sun.x * off, tr.y - tr.size / 2 + sway.y + sun.y * off, tr.size, tr.size);
@@ -490,15 +490,15 @@ class Flora {
     ctx.restore();
   }
 
-  drawTrees(ctx, t, gusts) {
+  drawTrees(ctx, t, wind) {
     for (const tr of this.trees) {
-      const sway = this.treeSway(tr, t, gusts);
+      const sway = this.treeSway(tr, t, wind);
       ctx.drawImage(tr.leaf, tr.x - tr.size / 2 + sway.x, tr.y - tr.size / 2 + sway.y, tr.size, tr.size);
     }
   }
 
-  treeSway(tr, t, gusts) {
-    const w = windAt(gusts, tr.x, tr.y);
+  treeSway(tr, t, wind) {
+    const w = windAt(wind, tr.x, tr.y);
     return { x: w.x * 10 + Math.sin(t * 0.6 + tr.ph) * 1.5, y: w.y * 10 + Math.cos(t * 0.5 + tr.ph) * 1.2 };
   }
 }

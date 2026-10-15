@@ -19,7 +19,7 @@
   let fish = [];
   let pads = [];
   let petals = [];
-  let gusts = [];
+  let wind = null;
   let sky = null;
   let shark = null;
   let vignette = null;
@@ -52,7 +52,8 @@
     flora = new Flora(pond, W, H, dpr);
     sky = new NightSky(pond);
     buildVignette();
-    gusts = [];
+    if (wind) wind.resize(W, H);
+    else wind = new Wind(W, H);
     shark = null;
 
     // As many koi as lily pads.
@@ -85,7 +86,6 @@
     if (koi) {
       koi.scatter(pond);
       water.disturb(koi.head.x, koi.head.y, 24, 6);
-      gusts.push(new Gust(W, H, rand(0.9, 1.2)));
       hud.hint.classList.add('hidden');
     } else if (pond.norm(x, y) < 1) {
       water.disturb(x, y, 14, 3); // tapping open water just makes a ripple
@@ -109,21 +109,15 @@
   let last = performance.now();
   let lastClock = '';
   let nextShark = elapsed + rand(12, 20);
-  let nextBreeze = elapsed + rand(8, 16);
 
   function waterStep() {
     water.ambient();
     for (const f of fish) water.disturb(f.head.x, f.head.y, f.length * 0.1, 0.04 + f.speed * 0.0011);
-    for (const g of gusts) g.ruffle(water);
+    wind.ruffle(water);
     water.step();
   }
 
   function update(dt) {
-    // Occasional breezes on their own, from any direction.
-    if (elapsed > nextBreeze) {
-      gusts.push(new Gust(W, H, rand(0.4, 0.75)));
-      nextBreeze = elapsed + rand(14, 30);
-    }
     if (!shark && elapsed > nextShark) shark = new Shark(pond);
     if (shark) {
       shark.update(dt, elapsed, water);
@@ -135,10 +129,9 @@
 
     const threats = shark && shark.visibility > 0.25 ? [shark] : [];
     for (const f of fish) f.update(dt, elapsed, pond, fish, threats);
-    for (const g of gusts) g.update(dt, elapsed);
-    gusts = gusts.filter((g) => !g.done);
-    for (const p of pads) p.update(dt, elapsed, pond, gusts, pads);
-    for (const p of petals) p.update(dt, elapsed, pond, gusts);
+    wind.update(dt, elapsed);
+    for (const p of pads) p.update(dt, elapsed, pond, wind, pads);
+    for (const p of petals) p.update(dt, elapsed, pond, wind);
     sky.update(dt, elapsed);
   }
 
@@ -161,10 +154,10 @@
     for (const p of petals) p.draw(ctx, sun);
     for (const p of pads) p.draw(ctx, sun);
     ctx.drawImage(land, 0, 0, W, H);
-    flora.drawTufts(ctx, elapsed, sun, gusts);
-    flora.drawTreeShadows(ctx, elapsed, sun, gusts);
-    flora.drawTrees(ctx, elapsed, gusts);
-    for (const g of gusts) g.draw(ctx);
+    flora.drawTufts(ctx, elapsed, sun, wind);
+    flora.drawTreeShadows(ctx, elapsed, sun, wind);
+    flora.drawTrees(ctx, elapsed, wind);
+    wind.draw(ctx);
 
     // Time-of-day light: tint everything, then add warm low sun near sunrise/sunset.
     const [r, g, b] = day.sky;

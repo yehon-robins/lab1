@@ -11,7 +11,8 @@ Open `index.html` in any modern browser (double-click works; the scripts are pla
 - **A natural pond** — an irregular pond set in grass and earth banks, with rocks, bushes, reeds, overhanging trees and weed swaying under the water.
 - **Living water** — a wave-equation height field with moving caustics, slope lighting and surface glints. Waves reflect off the shore, fish leave wakes, and tapping open water makes a ripple.
 - **Koi** — several varieties (kohaku, sanke, showa, ogon, tancho, …) with flexible bodies, flapping fins and a swaying tail.
-- **Click a koi** — it darts off in a random new direction, and a breeze sweeps across the pond as wavy, meandering wind lines that ruffle the water and push lily pads, petals, reeds and trees. Gentle breezes also come and go on their own.
+- **Click a koi** — it darts off in a random new direction.
+- **Wind** blows on its own all the time: its direction slowly wanders and it rises and falls in gusts and lulls, drawn as wavy, meandering wind lines that ruffle the water and push lily pads, petals, reeds and trees.
 - **The shark** — every so often a large shark glides across the pond on a slow S-curve, rising from the murk, cutting the surface with its fin, and sinking away. The koi move out of its path.
 - **Day–night cycle** — one full day every 2 minutes, with shadows that follow the sun, golden light at sunrise and sunset, and a night of moon and star reflections on the water and fireflies along the banks.
 
