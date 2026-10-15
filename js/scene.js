@@ -7,7 +7,7 @@
 // the push at their spot (a cheap formula, no particle search). A small, capped pool
 // of particles traces the field and leaves fading trails, so the wind reads as wavy
 // lines that bend and drift.
-const MAX_WIND_LINES = 26;
+const MAX_WIND_LINES = 34;
 
 class Wind {
   constructor(W, H) {
@@ -33,10 +33,10 @@ class Wind {
     return this.base + Math.sin(t * 0.031 + this.seedA) * 0.9 + Math.sin(t * 0.077 + this.seedB) * 0.5;
   }
 
-  // Overall strength in [0.08, 1]: long swells with quicker gusts on top.
+  // Overall strength in [0.25, 1]: long swells with quicker gusts on top.
   get strength() {
     const t = this.t;
-    return clamp(0.4 + Math.sin(t * 0.11 + this.seedC) * 0.3 + Math.sin(t * 0.29 + this.seedA) * 0.22, 0.08, 1);
+    return clamp(0.58 + Math.sin(t * 0.11 + this.seedC) * 0.28 + Math.sin(t * 0.29 + this.seedA) * 0.2, 0.25, 1);
   }
 
   flowAngle(x, y) {
@@ -69,9 +69,9 @@ class Wind {
   update(dt, t) {
     this.t = t;
     const s = this.strength;
-    // More (and faster) lines when it blows harder, none at all in a lull.
+    // More (and faster) lines when it blows harder, only a few in a lull.
     if (this.particles.length < MAX_WIND_LINES * s) {
-      this.spawnAcc += 9 * s * s * dt;
+      this.spawnAcc += 14 * s * dt;
       while (this.spawnAcc >= 1) { this.spawnAcc -= 1; this.spawn(); }
     }
     const speed = 200 * (0.5 + 0.5 * s);
@@ -98,7 +98,7 @@ class Wind {
     const dy = Math.sin(a);
     const along = x * Math.cos(this.angle) + y * Math.sin(this.angle);
     const patch = 0.65 + 0.35 * Math.sin(along * 0.006 - this.t * 1.3 + this.seedC);
-    const mag = this.strength * 0.4 * patch;
+    const mag = this.strength * 0.55 * patch;
     return { x: dx * mag, y: dy * mag };
   }
 
@@ -107,11 +107,11 @@ class Wind {
     const n = this.particles.length;
     if (!n) return;
     const s = this.strength;
-    for (let k = 0; k < 8; k++) {
+    for (let k = 0; k < 12; k++) {
       const p = this.particles[Math.floor(Math.random() * n)];
       const i = Math.floor(Math.random() * (p.trail.length / 2)) * 2;
       if (i + 1 >= p.trail.length) continue;
-      water.disturb(p.trail[i], p.trail[i + 1], 5, 0.35 * s * this.fade(p));
+      water.disturb(p.trail[i], p.trail[i + 1], 5, 0.5 * s * this.fade(p));
     }
   }
 
@@ -119,14 +119,14 @@ class Wind {
   // middle and tapers to nothing at both ends, fading along its length. Three ribbons
   // stacked (wide and faint, medium, narrow core) give it soft edges.
   draw(ctx) {
-    const passes = [[24, 0.07], [13, 0.1], [5, 0.16]];
+    const passes = [[26, 0.1], [14, 0.14], [5, 0.22]];
     const s = this.strength;
     ctx.save();
     for (const p of this.particles) {
       const tr = p.trail;
       const n = tr.length / 2;
       if (n < 8) continue;
-      const f = this.fade(p) * Math.min(1, s + 0.35) * p.bright;
+      const f = this.fade(p) * Math.min(1, s + 0.5) * p.bright;
       if (f < 0.02) continue;
 
       // Spine points with normals, every other trail point.
